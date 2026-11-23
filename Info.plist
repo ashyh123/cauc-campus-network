@@ -6,17 +6,20 @@
     <key>CFBundleIdentifier</key><string>local.cauc.campus-network</string>
     <key>CFBundleName</key><string>CAUC Campus Network</string>
     <key>CFBundleDisplayName</key><string>CAUC 校园网</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-    <key>CFBundleShortVersionString</key><string>1.1.0</string>
-    <key>CFBundleVersion</key><string>2</string>
+    <key>CFBundleShortVersionString</key><string>2.0.0</string>
+    <key>CFBundleVersion</key><string>3</string>
     <key>CFBundleDevelopmentRegion</key><string>zh_CN</string>
     <key>LSMinimumSystemVersion</key><string>13.0</string>
+    <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
-    <key>NSLocalNetworkUsageDescription</key><string>连接校园网的本地认证页面。</string>
+    <key>NSLocalNetworkUsageDescription</key><string>连接校园网本地认证页面并读取当前账户额度状态。</string>
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSAllowsArbitraryLoadsInWebContent</key><true/>
+        <key>NSAllowsLocalNetworking</key><true/>
     </dict>
 </dict>
 </plist>

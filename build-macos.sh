@@ -7,9 +7,16 @@ if [ "$(uname -s)" != Darwin ]; then
     exit 1
 fi
 
+swift build -c release --product CAUCCampusNetwork
+bin_dir="$(swift build -c release --show-bin-path)"
+
 app="$(pwd)/dist/CAUC Campus Network.app"
-mkdir -p "$app/Contents/MacOS"
+rm -rf "$app"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp Info.plist "$app/Contents/Info.plist"
-CGO_ENABLED=0 go build -buildvcs=false -trimpath -o "$app/Contents/MacOS/CAUCCampusNetwork" .
+cp AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
+cp "$bin_dir/CAUCCampusNetwork" "$app/Contents/MacOS/CAUCCampusNetwork"
+chmod +x "$app/Contents/MacOS/CAUCCampusNetwork"
 /usr/bin/codesign --force --sign - "$app"
+touch "$app"
 printf '%s\n' "$app"

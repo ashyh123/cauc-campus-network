@@ -1,0 +1,132 @@
+name: Windows Build & Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Verify AppIcon.ico resource
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Drawing
+          $icon = New-Object System.Drawing.Icon("windows/Assets/AppIcon.ico")
+          try {
+            if ($icon.Width -le 0 -or $icon.Height -le 0) {
+              throw "Invalid AppIcon.ico dimensions"
+            }
+            Write-Host "Verified AppIcon.ico: $($icon.Width)x$($icon.Height)"
+          } finally {
+            $icon.Dispose()
+          }
+
+      - name: Run Windows unit tests
+        run: dotnet test windows/CAUCCampusNetwork.sln -c Release --verbosity normal
+
+      - name: Resolve package version
+        id: version
+        shell: pwsh
+        run: |
+          $ref = "${{ github.ref }}"
+          if ($ref -match "^refs/tags/v(\d+\.\d+\.\d+)$") {
+            $ver = $Matches[1]
+            $tag = "v$ver"
+          } elseif ($ref -match "^refs/tags/v(.+)$") {
+            $raw = $Matches[1]
+            $tag = "v$raw"
+            if ($raw -match "^(\d+\.\d+\.\d+)") {
+              $ver = $Matches[1]
+            } else {
+              $ver = "2.0.0"
+            }
+          } else {
+            $ver = "2.0.0"
+            $tag = "v2.0.0"
+          }
+          "version=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Build and package portable Windows x64 zip
+        shell: pwsh
+        run: |
+          & .\windows\build-windows.ps1 -Version "${{ steps.version.outputs.version }}" -SkipTests
+
+      - name: Upload Windows build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: CAUC-Campus-Network-Windows-x64
+          path: |
+            windows/dist/CAUC-Campus-Network-*-Windows-x64.zip
+            windows/dist/SHA256SUMS.txt
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $tag = "${{ steps.version.outputs.tag }}"
+          $ver = "${{ steps.version.outputs.version }}"
+          $zipPath = "windows/dist/CAUC-Campus-Network-$ver-Windows-x64.zip"
+          $sumsPath = "windows/dist/SHA256SUMS.txt"
+          $notesPath = "windows/dist/RELEASE_NOTES.md"
+
+          $notesTemplate = @'
+          ## Windows 便携版使用说明（__TAG__）
+
+          1. 下载下方附件中的 `CAUC-Campus-Network-__VER__-Windows-x64.zip` 并解压。
+          2. 直接双击运行 `CAUCCampusNetwork.exe`（单文件自包含，无需提前安装 .NET 运行时；内置认证页使用 Windows 10/11 自带的 Edge WebView2）。
+          3. 如系统托盘图标被折叠到任务栏右下角 `^` 溢出区域，可将其拖出常驻显示；首次运行会直接弹出状态面板，之后左键点击托盘图标开关浮窗、右键打开快捷菜单。
+          4. 连上 CAUC 校园网后点击「开始认证」即可完成登录并自动激活、复检 IPv4/IPv6 双栈公网连通性。
+
+          ## 本版核心特性（Windows & macOS v__VER__）
+
+          - **原生托盘浮窗**：Windows 11（22H2+）使用原生 DWM Acrylic 亚克力毛玻璃，Windows 10 自动回退 Fluent 实色卡片，支持系统浅色 / 深色模式自适应。
+          - **IPv4 / IPv6 公网严格探测**：独立 Socket + TLS 探测，仅 2xx 响应判定公网可达，拒绝 Portal 302 重定向误判。
+          - **校园网额度与 VPN/TUN 穿透**：绑定物理网卡（WinSock `IP_UNICAST_IF` + 源 IP 绑定）直连 `192.168.100.200` 并发竞速，增量解析响应，并在同一网络路径下提供 60 秒额度缓存与冷却退避。
+          - **无痕认证窗与 IPv6 自动激活**：使用 WebView2 InPrivate 模式加载认证页，IPv4 连通后自动触发 `http://test6.ustc.edu.cn/` 激活 IPv6，双栈连通后自动关闭窗口；手动关闭窗口立即停止后台轮询。
+          - **网络切换 / 休眠唤醒监听与开机自启**：自动监听网卡切换与睡眠唤醒并重检；支持一键开关当前用户开机自启。
+
+          ## macOS 版说明
+
+          macOS 源码位于仓库根目录，请参考仓库 `README.md` 在 macOS 13+ 上通过 Swift 6 测试与构建 `CAUC Campus Network.app`。
+          '@
+
+          $notes = $notesTemplate.Replace("__TAG__", $tag).Replace("__VER__", $ver)
+          $notes | Set-Content -Path $notesPath -Encoding utf8
+
+          $ErrorActionPreference = "Continue"
+          gh release view "$tag" *> $null
+          $releaseExists = ($LASTEXITCODE -eq 0)
+          $ErrorActionPreference = "Stop"
+
+          if ($releaseExists) {
+            gh release upload "$tag" "$zipPath" "$sumsPath" --clobber
+            if ($LASTEXITCODE -ne 0) { throw "gh release upload failed" }
+            gh release edit "$tag" --title "CAUC 校园网助手 $tag" --notes-file "$notesPath"
+            if ($LASTEXITCODE -ne 0) { throw "gh release edit failed" }
+          } else {
+            gh release create "$tag" "$zipPath" "$sumsPath" --title "CAUC 校园网助手 $tag" --notes-file "$notesPath"
+            if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
+          }

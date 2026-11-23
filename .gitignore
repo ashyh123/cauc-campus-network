@@ -1,1 +1,8 @@
 /dist/
+/.build/
+/.swiftpm/
+.DS_Store
+windows/**/bin/
+windows/**/obj/
+windows/dist/
+.vs/
